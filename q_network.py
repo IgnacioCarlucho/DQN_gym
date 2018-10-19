@@ -25,17 +25,19 @@ class Network(object):
 
         with tf.device(self.device):
 
-            self.target_q_t = tf.placeholder(tf.float32, [None, self.a_dim], name='target_q')
-            self.action = tf.placeholder(tf.int32, [None, 1])
+            self.target_q_t = tf.placeholder(tf.float32, [None, 1], name='target_q')
+            self.action = tf.placeholder(tf.int32, [None,1])
             # obtain the q scores of the selected action
-            action_one_hot = tf.one_hot(self.action, self.a_dim, 1.0, 0.0, name='action_one_hot')
-            q_acted = tf.reduce_sum(self.out * action_one_hot, reduction_indices=1, name='q_acted')
-            
-            self.delta = tf.subtract(tf.stop_gradient(self.target_q_t), q_acted)
+            self.action_one_hot = tf.one_hot(self.action, self.a_dim, name='action_one_hot')
+            self.q_acted_0 = self.out * tf.squeeze(self.action_one_hot)
+            self.q_acted = tf.reduce_sum(self.q_acted_0, reduction_indices=1, name='q_acted')
+            #self.q_acted = tf.reduce_mean(self.q_acted_1, axis=1)
+
+            self.delta = tf.subtract(tf.squeeze(self.target_q_t), self.q_acted)
             #self.loss = self.clipped_error(self.delta)
-            # self.loss = tf.reduce_mean(self.clipped_error(self.delta), name='loss')
+            self.loss = tf.reduce_mean(self.clipped_error(self.delta), name='loss')
             
-            self.loss = tf.losses.huber_loss(tf.stop_gradient(self.target_q_t), q_acted, reduction=tf.losses.Reduction.MEAN)
+            #self.loss = tf.losses.huber_loss(tf.stop_gradient(self.target_q_t), self.q_acted, reduction=tf.losses.Reduction.MEAN)
             self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
             gradients = self.optimizer.compute_gradients(self.loss)
             for i, (grad, var) in enumerate(gradients):
@@ -70,10 +72,17 @@ class Network(object):
         saver = tf.train.Saver()
         return stateInput, out, saver
 
-        
     def train(self, actions, target_q_t, inputs):
         with tf.device(self.device):
-            self.sess.run(self.optimize, feed_dict={
+            return self.sess.run([self.loss, self.optimize], feed_dict={
+                self.action: actions,
+                self.target_q_t: target_q_t,
+                self.inputs: inputs
+            })
+
+    def train_v2(self, actions, target_q_t, inputs):
+        with tf.device(self.device):
+            return self.sess.run([self.action, self.action_one_hot, self.out, self.target_q_t, self.q_acted_0, self.q_acted, self.delta,  self.loss, self.optimize], feed_dict={
                 self.action: actions,
                 self.target_q_t: target_q_t,
                 self.inputs: inputs
