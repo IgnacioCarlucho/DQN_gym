@@ -23,31 +23,40 @@ class Network(object):
 
         self.update_target_network_params = [self.target_network_params[i].assign(self.network_params[i]) for i in range(len(self.target_network_params))]
 
-        with tf.device(self.device):
+        with tf.variable_scope('learning_rate'): 
+            # global step
+            self.global_step = tf.Variable(0, trainable=False)
+            self.decay_learning_rate = tf.train.exponential_decay(self.learning_rate, self.global_step, 100000, 0.96, staircase=True)
+            tf.summary.scalar('decay_learning_rate', self.decay_learning_rate)
 
-            self.target_q_t = tf.placeholder(tf.float32, [None, 1], name='target_q')
-            self.action = tf.placeholder(tf.int32, [None,1])
-            # obtain the q scores of the selected action
-            self.action_one_hot = tf.one_hot(self.action, self.a_dim, name='action_one_hot')
-            self.q_acted_0 = self.out * tf.squeeze(self.action_one_hot)
-            self.q_acted = tf.reduce_sum(self.q_acted_0, reduction_indices=1, name='q_acted')
-            #self.q_acted = tf.reduce_mean(self.q_acted_1, axis=1)
+        with tf.variable_scope('loss'): 
+            with tf.device(self.device):
 
-            self.delta = tf.subtract(tf.squeeze(self.target_q_t), self.q_acted)
-            #self.loss = self.clipped_error(self.delta)
-            self.loss = tf.reduce_mean(self.clipped_error(self.delta), name='loss')
-            
-            #self.loss = tf.losses.huber_loss(tf.stop_gradient(self.target_q_t), self.q_acted, reduction=tf.losses.Reduction.MEAN)
-            self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
-            gradients = self.optimizer.compute_gradients(self.loss)
-            for i, (grad, var) in enumerate(gradients):
-                if grad is not None:
-                    gradients[i] = (tf.clip_by_norm(grad, 5.), var)
-            self.optimize = self.optimizer.apply_gradients(gradients)
-            
-            #self.optimize = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+                # placeholders for training
+                self.target_q_t = tf.placeholder(tf.float32, [None, 1], name='target_q')
+                self.action = tf.placeholder(tf.int32, [None,1])
+                # obtain the q scores of the selected action
+                self.action_one_hot = tf.one_hot(self.action, self.a_dim, name='action_one_hot')
+                self.q_acted_0 = self.out * tf.squeeze(self.action_one_hot)
+                self.q_acted = tf.reduce_sum(self.q_acted_0, reduction_indices=1, name='q_acted')
+                
+                # calculate the loss
+                self.delta = tf.subtract(tf.squeeze(self.target_q_t), self.q_acted)
+                self.loss = tf.reduce_mean(self.clipped_error(self.delta), name='loss')
+                # optimize, with gradient clipping
+                self.optimizer = tf.train.AdamOptimizer(self.decay_learning_rate)
+                gradients = self.optimizer.compute_gradients(self.loss)
+                for i, (grad, var) in enumerate(gradients):
+                    if grad is not None:
+                        gradients[i] = (tf.clip_by_norm(grad, 5.), var)
+                self.optimize = self.optimizer.apply_gradients(gradients, global_step=self.global_step)
+                # or just optimize
+                #self.optimize = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
 
         self.num_trainable_vars = len(self.network_params) + len(self.target_network_params)
+        tf.summary.scalar('huber_loss', self.loss)
+        self.merged = tf.summary.merge_all()
+        
 
     def create_q_network(self, scope):
 
@@ -74,7 +83,7 @@ class Network(object):
 
     def train(self, actions, target_q_t, inputs):
         with tf.device(self.device):
-            return self.sess.run([self.loss, self.optimize], feed_dict={
+            return self.sess.run([self.merged, self.loss, self.optimize], feed_dict={
                 self.action: actions,
                 self.target_q_t: target_q_t,
                 self.inputs: inputs

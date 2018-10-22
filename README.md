@@ -5,6 +5,9 @@ I changed the reward function:
 ```
 reward = np.cos(2*next_state[3]) 
 ```
+The huber loss is implemented with gradient clipping and learning rate decay. Also layer normalization is applied form the paper: 
+- *Layer Normalization* Lei Ba et al. [pdf](https://arxiv.org/abs/1607.06450.)
+
 ## Requirements
 
 - Tensorflow  
@@ -26,4 +29,8 @@ $ python main.py
 
 ```
 
+You can see how the loss and the learning rate evolve over time with tensorboard accesing: 
+```
+tensorboard --logdir=train
 
+```
